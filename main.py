@@ -75,11 +75,49 @@ class EnergyCapsule(pygame.sprite.Sprite):
         self.image.fill(YELLOW)
         self.rect = self.image.get_rect(center=(random.randint(40, WIDTH-40), random.randint(40, HEIGHT-40)))
 
+class Bullet(pygame.sprite.Sprite):
+    def __init__(self, position_player, position_mouse):
+        super().__init__()
+        self.image = pygame.Surface((7, 7))
+        self.image.fill(WHITE)
+        self.rect = self.image.get_rect(center = (position_player[0] + 20, position_player[1] + 20)) #posiciona la bala justo en medio del personaje, que es de ahi de donde saldra
+
+        #configuracion de bala
+        self.speed = 5
+
+        if position_mouse[0] > position_player[0]:
+            self.direction = "derecha"
+        if position_mouse[0] < position_player[0]:
+            self.direction = "izquierda"
+        
+        if position_mouse[1] > position_player[1] + 40:
+            self.direction = "abajo"
+        if position_mouse[1] < position_player[1]:
+            self.direction = "arriba"
+
+    def update(self):
+        #verifica que la bala este dentro de la pantalla y no se haya salido
+        if (self.rect.x >= 0 and self.rect.x <= WIDTH) and (self.rect.y >= 0 and self.rect.y <= HEIGHT):
+
+            #actualizar el movimiento y hacia que direccion se movera y si sale de la pantalla que se elimine
+            if self.direction == "izquierda":
+                self.rect.x -= self.speed
+            if self.direction == "derecha":
+                self.rect.x += self.speed
+            if self.direction == "abajo":
+                self.rect.y += self.speed
+            if self.direction == "arriba":
+                self.rect.y -= self.speed
+        
+        #si se salio de la pantalla eliminalo del grupo
+        else: self.kill()
+
 # Grupos de sprites
 player = Player()
 player_group = pygame.sprite.Group(player)
 enemies = pygame.sprite.Group()
 capsules = pygame.sprite.Group()
+balas = pygame.sprite.Group()
 
 def spawn_capsules():
     capsules.empty()
@@ -119,6 +157,21 @@ def main():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
+            if event.type == pygame.KEYDOWN:
+                #verifica si se presiono el espacio o el boton derecho del mouse
+                if event.key == pygame.K_SPACE: 
+                    pos_mouse = pygame.mouse.get_pos()
+                    
+                    nueva_bala = Bullet(player.rect, pos_mouse)
+                    balas.add(nueva_bala)
+            
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    pos_mouse = pygame.mouse.get_pos()
+
+                    nueva_bala = Bullet(player.rect, pos_mouse)
+                    balas.add(nueva_bala)
+
 
         keys = pygame.key.get_pressed()
         player.update(keys)
@@ -138,6 +191,13 @@ def main():
         if pygame.sprite.spritecollideany(player, enemies):
             running = False
             break
+
+        # Colision de balas con enemigos
+        pygame.sprite.groupcollide(balas, enemies, True, True)
+        
+        #balas se mueven hacia la direccion del cursor
+        for bullet in balas:
+            bullet.update()
 
         # Enemigos persiguen al jugador
         for enemy in enemies:
@@ -168,6 +228,7 @@ def main():
         capsules.draw(screen)
         enemies.draw(screen)
         player_group.draw(screen)
+        balas.draw(screen)
         draw_hud(night, time_left, player.energy)
         pygame.display.flip()
 

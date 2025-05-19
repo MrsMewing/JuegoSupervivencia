@@ -1,6 +1,7 @@
 import pygame
 import random
 import sys
+import math
 
 # Configuración
 WIDTH, HEIGHT = 800, 600
@@ -18,12 +19,16 @@ GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 BLUE = (0, 100, 255)
 YELLOW = (255, 255, 0)
+BROWN = (139, 69, 19)
 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Explorador: Supervivencia Galáctica")
 clock = pygame.time.Clock()
 font = pygame.font.SysFont(None, 36)
+
+
+fuente = pygame.font.Font(None, 35)
 
 # Clases
 class Player(pygame.sprite.Sprite):
@@ -80,37 +85,45 @@ class Bullet(pygame.sprite.Sprite):
         super().__init__()
         self.image = pygame.Surface((7, 7))
         self.image.fill(WHITE)
+
+        #posicion inicial del la bala
         self.rect = self.image.get_rect(center = (position_player[0] + 20, position_player[1] + 20)) #posiciona la bala justo en medio del personaje, que es de ahi de donde saldra
 
         #configuracion de bala
         self.speed = 5
 
-        if position_mouse[0] > position_player[0]:
-            self.direction = "derecha"
-        if position_mouse[0] < position_player[0]:
-            self.direction = "izquierda"
-        
-        if position_mouse[1] > position_player[1] + 40:
-            self.direction = "abajo"
-        if position_mouse[1] < position_player[1]:
-            self.direction = "arriba"
+        #calcula la direccion de hacia donde se va a mover la bala
+        self.direction_x = position_mouse[0] - position_player[0]
+        self.direction_y = position_mouse[1] - position_player[1]
+
+        self.magnitud = math.sqrt(self.direction_x**2 + self.direction_y**2)
+
+        self.dx = self.direction_x / self.magnitud
+        self.dy = self.direction_y / self.magnitud
 
     def update(self):
         #verifica que la bala este dentro de la pantalla y no se haya salido
         if (self.rect.x >= 0 and self.rect.x <= WIDTH) and (self.rect.y >= 0 and self.rect.y <= HEIGHT):
 
-            #actualizar el movimiento y hacia que direccion se movera y si sale de la pantalla que se elimine
-            if self.direction == "izquierda":
-                self.rect.x -= self.speed
-            if self.direction == "derecha":
-                self.rect.x += self.speed
-            if self.direction == "abajo":
-                self.rect.y += self.speed
-            if self.direction == "arriba":
-                self.rect.y -= self.speed
+            self.rect.x += self.dx * self.speed
+            self.rect.y += self.dy * self.speed
         
         #si se salio de la pantalla eliminalo del grupo
         else: self.kill()
+
+class Ammunition(pygame.sprite.Sprite):
+    def __init__(self, ):
+        super().__init__()
+        self.image = pygame.surface.Surface((20, 20))
+        self.image.fill(BROWN)
+        self.rect = self.image.get_rect(center=(random.randint(40, WIDTH-40), random.randint(40, HEIGHT-40)))
+        self.creation_time = pygame.time.get_ticks() #obtiene el tiempo en el que creo la municion
+        self.lifetime = 2000 #2 segundos sera el tiempo en que estara vivo la municion
+
+    def update(self):
+        current_weather = pygame.time.get_ticks()
+        if current_weather - self.creation_time  >= self.lifetime:
+            self.kill()
 
 # Grupos de sprites
 player = Player()
@@ -118,11 +131,15 @@ player_group = pygame.sprite.Group(player)
 enemies = pygame.sprite.Group()
 capsules = pygame.sprite.Group()
 balas = pygame.sprite.Group()
+ammunitions = pygame.sprite.Group()
 
 def spawn_capsules():
     capsules.empty()
     for _ in range(ENERGY_CAPSULES):
         capsules.add(EnergyCapsule())
+
+def spawn_ammunition():
+    ammunitions.add(Ammunition())
 
 def spawn_enemy():
     enemies.add(Enemy())
@@ -130,6 +147,10 @@ def spawn_enemy():
 def draw_hud(night, time_left, energy):
     text = font.render(f"Noche: {night}/{NIGHTS_TO_SURVIVE}  Tiempo: {int(time_left)}s  Energía: {int(energy)}", True, WHITE)
     screen.blit(text, (10, 10))
+
+def draw_available_bullets(texto):    
+    texto_renderizado = fuente.render(texto, True, WHITE)
+    screen.blit(texto_renderizado, (10, 550))
 
 def game_over_screen(win):
     screen.fill(BLACK)
@@ -141,10 +162,12 @@ def game_over_screen(win):
 
 # Juego principal
 def main():
+    balas_disponibles = 5
     night = 1
     time_left = NIGHT_DURATION
     spawn_capsules()
     enemy_spawn_timer = 0
+    ammunition_spawn_timer = 0
     running = True
     win = False
 
@@ -152,6 +175,7 @@ def main():
         dt = clock.tick(FPS) / 1000
         time_left -= dt
         enemy_spawn_timer += dt
+        ammunition_spawn_timer += dt
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -159,19 +183,20 @@ def main():
                 sys.exit()
             if event.type == pygame.KEYDOWN:
                 #verifica si se presiono el espacio o el boton derecho del mouse
-                if event.key == pygame.K_SPACE: 
+                if event.key == pygame.K_SPACE and balas_disponibles > 0: 
                     pos_mouse = pygame.mouse.get_pos()
                     
                     nueva_bala = Bullet(player.rect, pos_mouse)
                     balas.add(nueva_bala)
+                    balas_disponibles -= 1
             
-            if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.type == pygame.MOUSEBUTTONDOWN and balas_disponibles > 0:
                 if event.button == 1:
                     pos_mouse = pygame.mouse.get_pos()
 
                     nueva_bala = Bullet(player.rect, pos_mouse)
                     balas.add(nueva_bala)
-
+                    balas_disponibles -= 1
 
         keys = pygame.key.get_pressed()
         player.update(keys)
@@ -194,6 +219,11 @@ def main():
 
         # Colision de balas con enemigos
         pygame.sprite.groupcollide(balas, enemies, True, True)
+
+        colision_entre_jugador_y_enemigo = pygame.sprite.spritecollide(player, ammunitions, True)
+        if colision_entre_jugador_y_enemigo:
+            if balas_disponibles < 5:
+                balas_disponibles = 5
         
         #balas se mueven hacia la direccion del cursor
         for bullet in balas:
@@ -203,10 +233,18 @@ def main():
         for enemy in enemies:
             enemy.update(player.rect.center)
 
+        for ammunition in ammunitions:
+            ammunition.update()
+
         # Spawnea enemigos cada 2 segundos
         if enemy_spawn_timer > 2:
             spawn_enemy()
             enemy_spawn_timer = 0
+
+        #Spawnea municiones cada 3 segundos
+        if ammunition_spawn_timer > 3:
+            spawn_ammunition()
+            ammunition_spawn_timer = 0
 
         # Si se acaban las cápsulas, respawnea
         if len(capsules) == 0:
@@ -218,6 +256,7 @@ def main():
             time_left = NIGHT_DURATION
             enemies.empty()
             spawn_capsules()
+            balas_disponibles = 5
             player.energy = min(100, player.energy + 50)
             if night > NIGHTS_TO_SURVIVE:
                 win = True
@@ -229,7 +268,13 @@ def main():
         enemies.draw(screen)
         player_group.draw(screen)
         balas.draw(screen)
+        ammunitions.draw(screen)
         draw_hud(night, time_left, player.energy)
+
+        if balas_disponibles == 0: 
+            draw_available_bullets(f"Recargando balas...")
+        else: draw_available_bullets(f"Balas disponibles {balas_disponibles}")
+
         pygame.display.flip()
 
     game_over_screen(win)
